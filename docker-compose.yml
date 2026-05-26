@@ -2,7 +2,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     volumes:
-      - ollama_models:/root/.ollama
+      - ${OLLAMA_MODELS_PATH:-/mnt/user/appdata/ollama}:/root/.ollama
     ports:
       - "11434:11434"
     restart: unless-stopped
@@ -34,5 +34,4 @@ services:
       - TZ=${TZ:-America/Chicago}
     restart: unless-stopped
 
-volumes:
-  ollama_models:
+# ollama_models volume replaced with bind mount (see OLLAMA_MODELS_PATH in .env)
