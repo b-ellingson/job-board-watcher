@@ -19,8 +19,12 @@ except ImportError:
 import streamlit as st
 from datetime import timezone as _tz
 
+import time as _time
+
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
+
+from tools import runner as _runner
 
 
 def _fmt_local(iso_str: str) -> str:
@@ -338,6 +342,53 @@ with tabs[0]:
         auto_refresh_js(poll_secs)
         st.caption(f"Live mode ON — refreshing every {poll_secs}s | Alert threshold: {alert_threshold}/10")
 
+    # ── Background Task Status ────────────────────────────────────────────
+    _bg = _runner.get_status()
+    _bg_running = bool(_bg and _bg.get("state") == "running")
+
+    if _bg:
+        with st.container(border=True):
+            st.markdown("#### ⚙️ Background Task")
+            if _bg_running:
+                _started_dt = datetime.fromisoformat(_bg["started_at"])
+                _elapsed    = int((datetime.now() - _started_dt).total_seconds())
+                _mins, _secs = divmod(_elapsed, 60)
+                _info_col, _stop_col = st.columns([4, 1])
+                with _info_col:
+                    st.info(f"**Running:** {_bg['label']} — {_mins}m {_secs}s elapsed")
+                with _stop_col:
+                    if st.button("⏹ Stop", type="secondary", key="stop_bg"):
+                        _runner.stop()
+                        st.rerun()
+                with st.expander("Live log", expanded=True):
+                    st.code(_runner.get_log_tail(35))
+            else:
+                _state = _bg.get("state", "")
+                _dur   = _bg.get("duration_s")
+                _dur_s = f" in {_dur // 60}m {_dur % 60}s" if _dur is not None else ""
+                if _state == "done":
+                    st.success(f"✅ **{_bg['label']}** completed{_dur_s}")
+                elif _state == "stopped":
+                    st.warning(f"⏹ **{_bg['label']}** was stopped{_dur_s}")
+                with st.expander("Last run log"):
+                    st.code(_runner.get_log_tail(35))
+
+        _history = _runner.get_history()
+        if _history:
+            with st.expander("📊 Run History & Timing Benchmarks"):
+                _rows = []
+                for _h in reversed(_history[-15:]):
+                    _d = _h.get("duration_s")
+                    _rows.append({
+                        "Task":     _h.get("label", ""),
+                        "Started":  _fmt_local(_h.get("started_at", "")),
+                        "Status":   _h.get("state", ""),
+                        "Duration": f"{_d // 60}m {_d % 60}s" if _d is not None else "—",
+                    })
+                st.dataframe(_rows, use_container_width=True, hide_index=True)
+
+    st.divider()
+
     # ── Run Now ──────────────────────────────────────────────────────────
     st.subheader("Run Now")
     col_run, col_digest = st.columns([1, 1])
@@ -349,30 +400,22 @@ with tabs[0]:
         dry_run    = c2.checkbox("Dry run")
         skip_score = c3.checkbox("Skip scoring")
 
-        if st.button("▶ Start Run", type="primary"):
+        if st.button("▶ Start Run", type="primary", disabled=_bg_running):
             cmd = [sys.executable, str(ROOT / "run.py"), "--no-hours"]
             if run_company: cmd += ["--company", run_company]
             if force_all:   cmd.append("--force-all")
             if dry_run:     cmd.append("--dry-run")
             if skip_score:  cmd.append("--skip-score")
-            log = st.empty()
-            rc = run_streaming(cmd, log, str(ROOT))
-            if rc == 0:
-                st.success("Run complete!")
-            else:
-                st.error("Run finished with errors.")
+            _runner.start("Scrape & Score" + (f" ({run_company})" if run_company else ""), cmd)
+            st.rerun()
 
     with col_digest:
         st.subheader("Send Digest Now")
         st.caption("Sends all unsent matching jobs to your alert email.")
-        if st.button("📧 Send Digest"):
+        if st.button("📧 Send Digest", disabled=_bg_running):
             cmd = [sys.executable, str(ROOT / "run.py"), "--send-digest", "--no-hours"]
-            log = st.empty()
-            rc = run_streaming(cmd, log, str(ROOT))
-            if rc == 0:
-                st.success("Digest sent!")
-            else:
-                st.error("Error sending digest.")
+            _runner.start("Send Digest", cmd)
+            st.rerun()
 
     st.divider()
 
@@ -393,14 +436,9 @@ with tabs[0]:
             else:
                 est = len(unscored) * 0.0003
                 st.info(f"Estimated cost: ~${est:.2f} (Claude Haiku, ~$0.0003/job)")
-            if st.button(f"⚡ Score {len(unscored)} Unscored Jobs"):
+            if st.button(f"⚡ Score {len(unscored)} Unscored Jobs", disabled=_bg_running):
                 cmd = [sys.executable, str(ROOT / "run.py"), "--score-only", "--no-hours"]
-                log = st.empty()
-                rc = run_streaming(cmd, log, str(ROOT))
-                if rc == 0:
-                    st.success("Scoring complete!")
-                else:
-                    st.error("Scoring had errors.")
+                _runner.start(f"Score {len(unscored)} Jobs", cmd)
                 st.rerun()
         else:
             st.success("All jobs are scored.")
@@ -422,14 +460,9 @@ with tabs[0]:
             "I understand this will overwrite existing scores" if _using_ollama else "I understand this will use API credits",
             key="confirm_rescore",
         )
-        if st.button("🔄 Rescore All Real Jobs", disabled=not confirm_rescore):
+        if st.button("🔄 Rescore All Real Jobs", disabled=not confirm_rescore or _bg_running):
             cmd = [sys.executable, str(ROOT / "run.py"), "--rescore-all", "--no-hours"]
-            log = st.empty()
-            rc = run_streaming(cmd, log, str(ROOT))
-            if rc == 0:
-                st.success("Rescore complete!")
-            else:
-                st.error("Rescore had errors.")
+            _runner.start(f"Rescore All ({all_real:,} jobs)", cmd)
             st.rerun()
 
     st.divider()
@@ -457,6 +490,11 @@ with tabs[0]:
                 st.caption(_fmt_local(j.get("first_seen", "")))
     else:
         st.info("No jobs found in the last 48 hours. Run a scrape to get started.")
+
+    # Auto-refresh Dashboard every 3s while a background task is running
+    if _bg_running:
+        _time.sleep(3)
+        st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════════════
