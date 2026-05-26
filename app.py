@@ -383,11 +383,16 @@ with tabs[0]:
 
     sc_col1, sc_col2 = st.columns(2)
 
+    _using_ollama = bool(env.get("OLLAMA_BASE_URL", "").strip())
+
     with sc_col1:
         st.caption(f"**{len(unscored)}** unscored real jobs in database")
         if unscored:
-            est = len(unscored) * 0.0003
-            st.info(f"Estimated cost: ~${est:.2f} (Claude Haiku, ~$0.0003/job)")
+            if _using_ollama:
+                st.info(f"Scoring {len(unscored)} jobs locally via Ollama (free)")
+            else:
+                est = len(unscored) * 0.0003
+                st.info(f"Estimated cost: ~${est:.2f} (Claude Haiku, ~$0.0003/job)")
             if st.button(f"⚡ Score {len(unscored)} Unscored Jobs"):
                 cmd = [sys.executable, str(ROOT / "run.py"), "--score-only", "--no-hours"]
                 log = st.empty()
@@ -401,13 +406,22 @@ with tabs[0]:
             st.success("All jobs are scored.")
 
     with sc_col2:
-        est_all = all_real * 0.0003
-        st.warning(
-            f"**Rescore All** will re-score all {all_real:,} real jobs using the Claude API, "
-            f"overwriting existing scores.  \nEstimated cost: **~${est_all:.2f}**  \n"
-            "Use this after changing your resume or preferences."
+        if _using_ollama:
+            st.info(
+                f"**Rescore All** will re-score all {all_real:,} real jobs using Ollama (free, local).  \n"
+                "Use this after changing your resume or preferences."
+            )
+        else:
+            est_all = all_real * 0.0003
+            st.warning(
+                f"**Rescore All** will re-score all {all_real:,} real jobs using the Claude API, "
+                f"overwriting existing scores.  \nEstimated cost: **~${est_all:.2f}**  \n"
+                "Use this after changing your resume or preferences."
+            )
+        confirm_rescore = st.checkbox(
+            "I understand this will overwrite existing scores" if _using_ollama else "I understand this will use API credits",
+            key="confirm_rescore",
         )
-        confirm_rescore = st.checkbox("I understand this will use API credits", key="confirm_rescore")
         if st.button("🔄 Rescore All Real Jobs", disabled=not confirm_rescore):
             cmd = [sys.executable, str(ROOT / "run.py"), "--rescore-all", "--no-hours"]
             log = st.empty()
