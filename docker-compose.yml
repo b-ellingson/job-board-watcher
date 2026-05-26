@@ -16,7 +16,7 @@ services:
     #           capabilities: [gpu]
 
   app:
-    build: .
+    image: job-board-watcher-app
     depends_on:
       - ollama
     ports:
