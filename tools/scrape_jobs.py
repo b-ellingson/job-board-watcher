@@ -177,6 +177,7 @@ def scrape_playwright(company: dict) -> list[dict]:
             page.set_extra_http_headers({"User-Agent": HEADERS["User-Agent"]})
 
             captured_jobs: list[dict] = []
+            seen_hashes: set[str] = set()
 
             # Intercept API responses that look like job listing payloads
             def handle_response(response):
@@ -187,13 +188,38 @@ def scrape_playwright(company: dict) -> list[dict]:
                     if "json" not in ct:
                         return
                     body = response.json()
-                    _extract_jobs_from_json(body, url, company["name"], captured_jobs)
+                    batch: list[dict] = []
+                    _extract_jobs_from_json(body, url, company["name"], batch)
+                    for j in batch:
+                        h = j.get("content_hash", "")
+                        if h and h in seen_hashes:
+                            continue
+                        if h:
+                            seen_hashes.add(h)
+                        captured_jobs.append(j)
                 except Exception:
                     pass
 
             page.on("response", handle_response)
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             time.sleep(3)
+
+            # Scroll to trigger infinite-scroll / lazy-paginated job lists.
+            # Stops when two consecutive scrolls add no new jobs.
+            prev_count = len(captured_jobs)
+            no_new_rounds = 0
+            for scroll_i in range(30):
+                page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                time.sleep(2)
+                current = len(captured_jobs)
+                if current == prev_count:
+                    no_new_rounds += 1
+                    if no_new_rounds >= 2:
+                        break
+                else:
+                    no_new_rounds = 0
+                    print(f"    [playwright] {company['name']}: {current} jobs after scroll {scroll_i + 1}")
+                prev_count = current
 
             if not captured_jobs:
                 # Fallback: parse visible page text for job titles
