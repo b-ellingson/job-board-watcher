@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Alert</title>
+<style>
+  body { margin: 0; padding: 0; background: #f4f6f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif; color: #1a1a2e; }
+  .wrapper { max-width: 680px; margin: 0 auto; padding: 24px 16px; }
+  /* Header */
+  .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border-radius: 12px 12px 0 0; padding: 28px 32px; color: #fff; }
+  .header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 700; letter-spacing: -0.3px; }
+  .header .subtitle { margin: 0; font-size: 13px; color: #94a3b8; }
+  .stats-row { display: flex; gap: 24px; margin-top: 18px; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .num { font-size: 26px; font-weight: 800; color: #60a5fa; line-height: 1; }
+  .stat .label { font-size: 11px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+  /* Body */
+  .body { background: #fff; padding: 24px 32px; border: 1px solid #e2e8f0; border-top: none; }
+  /* Company section */
+  .company-header { display: flex; align-items: center; justify-content: space-between; margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #e2e8f0; }
+  .company-header:first-child { margin-top: 0; }
+  .company-name { font-size: 15px; font-weight: 700; color: #1a1a2e; text-transform: uppercase; letter-spacing: 0.5px; }
+  .company-count { font-size: 12px; color: #64748b; background: #f1f5f9; padding: 2px 8px; border-radius: 12px; }
+  /* Job card */
+  .job-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 10px; }
+  .job-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .job-title { font-size: 15px; font-weight: 600; color: #1e293b; margin: 0 0 4px; line-height: 1.3; }
+  .job-meta { font-size: 12px; color: #64748b; margin: 0; }
+  .score-badge { flex-shrink: 0; font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 6px; white-space: nowrap; }
+  .score-high   { background: #dcfce7; color: #15803d; }
+  .score-medium { background: #fef9c3; color: #a16207; }
+  .score-low    { background: #f1f5f9; color: #64748b; }
+  .job-reason { font-size: 12px; color: #475569; margin: 10px 0 0; line-height: 1.5; }
+  .keywords { margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 4px; }
+  .keyword { font-size: 11px; background: #eff6ff; color: #3b82f6; padding: 2px 7px; border-radius: 4px; border: 1px solid #bfdbfe; }
+  .job-footer { margin-top: 12px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+  .view-btn { display: inline-block; background: #3b82f6; color: #fff !important; text-decoration: none; padding: 7px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .view-btn:hover { background: #2563eb; }
+  /* Immediate alert banner */
+  .alert-banner { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px; color: #92400e; }
+  .alert-banner strong { color: #78350f; }
+  /* Footer */
+  .footer { background: #f8fafc; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 12px 12px; padding: 16px 32px; text-align: center; font-size: 11px; color: #94a3b8; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <!-- Header -->
+  <div class="header">
+    <h1>{% if is_alert %}⚡ Hot Job Alert{% else %}Job Board Digest{% endif %}</h1>
+    <p class="subtitle">{{ generated_at }}</p>
+    <div class="stats-row">
+      <div class="stat"><div class="num">{{ total_new }}</div><div class="label">New Jobs</div></div>
+      <div class="stat"><div class="num">{{ total_matching }}</div><div class="label">Matching</div></div>
+      <div class="stat"><div class="num">{{ companies_checked }}</div><div class="label">Companies</div></div>
+    </div>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+
+    {% if is_alert %}
+    <div class="alert-banner">
+      <strong>High-priority match found!</strong> This role scored {{ jobs[0].score }}/10 and was posted within the last 15 minutes.
+    </div>
+    {% endif %}
+
+    {% for company_name, company_jobs in grouped_jobs.items() %}
+    <div class="company-header">
+      <span class="company-name">{{ company_name }}</span>
+      <span class="company-count">{{ company_jobs | length }} role{{ 's' if company_jobs | length != 1 else '' }}</span>
+    </div>
+
+    {% for job in company_jobs %}
+    {% set score = job.score or 0 %}
+    {% if score >= 8 %}{% set badge_class = "score-high" %}
+    {% elif score >= 6 %}{% set badge_class = "score-medium" %}
+    {% else %}{% set badge_class = "score-low" %}{% endif %}
+
+    <div class="job-card">
+      <div class="job-top">
+        <div>
+          <p class="job-title">{{ job.title }}</p>
+          <p class="job-meta">
+            {% if job.department %}{{ job.department }}{% endif %}
+            {% if job.department and job.location %} &middot; {% endif %}
+            {% if job.location %}{{ job.location }}{% endif %}
+          </p>
+        </div>
+        <span class="score-badge {{ badge_class }}">{{ score }}/10</span>
+      </div>
+
+      {% if job.score_reason %}
+      <p class="job-reason">{{ job.score_reason }}</p>
+      {% endif %}
+
+      {% if job.matched_keywords %}
+      <div class="keywords">
+        {% set kw_list = job.matched_keywords if job.matched_keywords is iterable and job.matched_keywords is not string else [] %}
+        {% for kw in kw_list[:6] %}
+        <span class="keyword">{{ kw }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if job.url %}
+      <div class="job-footer">
+        <a href="{{ job.url }}" class="view-btn">View Job &rarr;</a>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endfor %}
+
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    Job Board Watcher &nbsp;&bull;&nbsp; Open <strong>app.py</strong> to manage companies and preferences
+  </div>
+</div>
+</body>
+</html>

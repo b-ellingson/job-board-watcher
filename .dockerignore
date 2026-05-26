@@ -1,0 +1,12 @@
+.env
+credentials.json
+token.json
+.tmp/
+__pycache__/
+**/__pycache__/
+*.pyc
+.git/
+.idea/
+*.egg-info/
+.venv/
+venv/

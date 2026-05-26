@@ -1,0 +1,38 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    # Uncomment below for Nvidia GPU passthrough (requires nvidia-container-toolkit on Unraid):
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  app:
+    build: .
+    depends_on:
+      - ollama
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./.env:/app/.env
+      - ./companies.json:/app/companies.json
+      - ./profile:/app/profile
+      - ./.tmp:/app/.tmp
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:7b}
+      - TZ=${TZ:-America/Chicago}
+    restart: unless-stopped
+
+volumes:
+  ollama_models:

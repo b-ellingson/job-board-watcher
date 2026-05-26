@@ -1,0 +1,5 @@
+# Default: normalize to LF in repo, checkout as-is on Windows
+* text=auto
+
+# Shell scripts must always use LF (runs inside Linux containers)
+*.sh text eol=lf
