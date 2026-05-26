@@ -1271,51 +1271,62 @@ with tabs[4]:
     st.divider()
     st.markdown("### System Controls")
 
-    task_result = subprocess.run(
-        ["schtasks", "/query", "/tn", "JobBoardWatcher", "/fo", "LIST"],
-        capture_output=True, text=True,
-    )
-    task_exists   = task_result.returncode == 0
-    task_disabled = task_exists and "Disabled" in task_result.stdout
+    sys_col1, sys_col2 = st.columns(2)
 
-    sys_col1, sys_col2, sys_col3 = st.columns(3)
+    if sys.platform == "win32":
+        # Windows: manage via Task Scheduler
+        task_result = subprocess.run(
+            ["schtasks", "/query", "/tn", "JobBoardWatcher", "/fo", "LIST"],
+            capture_output=True, text=True,
+        )
+        task_exists   = task_result.returncode == 0
+        task_disabled = task_exists and "Disabled" in task_result.stdout
 
-    with sys_col1:
-        st.markdown("**Automation (Task Scheduler)**")
-        if task_exists:
-            if task_disabled:
-                st.warning("⏸ Automation is paused")
-                if st.button("▶ Resume Automation"):
-                    subprocess.run(["schtasks", "/change", "/tn", "JobBoardWatcher", "/enable"],
-                                   capture_output=True)
-                    st.success("Automation resumed.")
-                    st.rerun()
+        with sys_col1:
+            st.markdown("**Automation (Task Scheduler)**")
+            if task_exists:
+                if task_disabled:
+                    st.warning("⏸ Automation is paused")
+                    if st.button("▶ Resume Automation"):
+                        subprocess.run(["schtasks", "/change", "/tn", "JobBoardWatcher", "/enable"],
+                                       capture_output=True)
+                        st.success("Automation resumed.")
+                        st.rerun()
+                else:
+                    st.success("✅ Automation is running")
+                    if st.button("⏸ Pause Automation"):
+                        subprocess.run(["schtasks", "/change", "/tn", "JobBoardWatcher", "/disable"],
+                                       capture_output=True)
+                        st.success("Automation paused — no scraping until resumed.")
+                        st.rerun()
             else:
-                st.success("✅ Automation is running")
-                if st.button("⏸ Pause Automation"):
-                    subprocess.run(["schtasks", "/change", "/tn", "JobBoardWatcher", "/disable"],
-                                   capture_output=True)
-                    st.success("Automation paused — no scraping until resumed.")
-                    st.rerun()
-        else:
-            st.info("Task not registered")
-            st.caption("Click 'Apply & Update Task Scheduler' above to register.")
+                st.info("Task not registered")
+                st.caption("Click 'Apply & Update Task Scheduler' above to register.")
 
-    with sys_col2:
-        st.markdown("**Dashboard**")
-        st.caption("Stops the Streamlit web server. Relaunch with `streamlit run app.py`.")
-        if st.button("🛑 Stop Dashboard"):
-            st.warning("Shutting down...")
-            import threading, time as _time
-            def _shutdown():
-                _time.sleep(1)
-                os._exit(0)
-            threading.Thread(target=_shutdown, daemon=True).start()
+        with sys_col2:
+            st.markdown("**Task Scheduler Status**")
+            if task_exists:
+                with st.expander("View task details"):
+                    st.code(task_result.stdout)
+            else:
+                st.caption("No task found.")
+    else:
+        # Docker / Linux: scraper loop is managed by entrypoint.sh
+        with sys_col1:
+            st.markdown("**Automation (Docker)**")
+            st.success("✅ Scraper loop running via Docker entrypoint")
+            st.caption(
+                f"Runs every {env.get('TASK_INTERVAL_MINUTES', '5')} minutes. "
+                "To pause, stop the container from Unraid."
+            )
 
-    with sys_col3:
-        st.markdown("**Task Scheduler Status**")
-        if task_exists:
-            with st.expander("View task details"):
-                st.code(task_result.stdout)
-        else:
-            st.caption("No task found.")
+    st.divider()
+    st.markdown("**Dashboard**")
+    st.caption("Stops the Streamlit web server. In Docker, the container will restart it automatically.")
+    if st.button("🛑 Stop Dashboard"):
+        st.warning("Shutting down...")
+        import threading, time as _time
+        def _shutdown():
+            _time.sleep(1)
+            os._exit(0)
+        threading.Thread(target=_shutdown, daemon=True).start()
