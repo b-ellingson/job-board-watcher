@@ -213,8 +213,17 @@ def main():
 
     # -- Immediate alerts for hot jobs ------------------------------------
     alert_threshold = int(os.getenv("IMMEDIATE_ALERT_THRESHOLD", "9"))
+
+    # Alert on new high-score jobs from this run
     hot_jobs = [j for j in all_new if (j.get("score") or 0) >= alert_threshold]
     for job in hot_jobs:
+        sent = send_alert(job)
+        if sent:
+            mark_emailed([job["content_hash"]])
+
+    # Also alert on any previously-discovered jobs above threshold not yet emailed
+    # (covers jobs scored in a prior --score-only run or a previous session)
+    for job in get_unsent_jobs(threshold=alert_threshold):
         sent = send_alert(job)
         if sent:
             mark_emailed([job["content_hash"]])

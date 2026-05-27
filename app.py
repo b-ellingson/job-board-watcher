@@ -28,11 +28,17 @@ from tools import runner as _runner
 
 
 def _fmt_local(iso_str: str) -> str:
-    """Convert a UTC ISO timestamp stored in the DB to the local time display string."""
+    """Convert a UTC ISO timestamp stored in the DB to the configured local timezone."""
     if not iso_str:
         return ""
     try:
-        dt = datetime.fromisoformat(iso_str).replace(tzinfo=_tz.utc).astimezone()
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        tz_name = os.getenv("TZ", "UTC")
+        try:
+            tz = ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, KeyError):
+            tz = _tz.utc
+        dt = datetime.fromisoformat(iso_str).replace(tzinfo=_tz.utc).astimezone(tz)
         return dt.strftime("%Y-%m-%d %H:%M")
     except Exception:
         return iso_str[:16].replace("T", " ")
@@ -1234,6 +1240,26 @@ with tabs[4]:
 
     st.divider()
 
+    # ── Timezone ─────────────────────────────────────────────────────────
+    st.markdown("### Timezone")
+    tz_col1, tz_col2 = st.columns([2, 3])
+    with tz_col1:
+        tz_value = st.text_input(
+            "Timezone (IANA name)",
+            value=env.get("TZ", "America/Chicago"),
+            placeholder="America/Chicago",
+            help="Sets display time throughout the app and in Docker. Must be a valid IANA timezone name.",
+        )
+    with tz_col2:
+        st.markdown("**Common timezones**")
+        st.caption(
+            "America/New\\_York · America/Chicago · America/Denver · America/Los\\_Angeles  \n"
+            "America/Phoenix · America/Anchorage · Pacific/Honolulu  \n"
+            "Europe/London · Europe/Berlin · Asia/Tokyo · Australia/Sydney"
+        )
+
+    st.divider()
+
     # ── Active Hours ────────────────────────────────────────────────────
     st.markdown("### Active Hours")
     ah_col1, ah_col2 = st.columns(2)
@@ -1320,6 +1346,7 @@ with tabs[4]:
             "OLLAMA_MODEL":              ollama_model_s.strip() or "qwen2.5:7b",
             "IMMEDIATE_ALERT_THRESHOLD": str(alert_threshold_s),
             "SCORE_THRESHOLD":           str(digest_threshold_s),
+            "TZ":                        tz_value.strip() or "UTC",
             "ACTIVE_HOURS_START":        str(active_start),
             "ACTIVE_HOURS_END":          str(active_end),
             "ALERT_SOUND":               alert_sound_s,
