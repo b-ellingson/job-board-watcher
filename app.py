@@ -491,10 +491,9 @@ with tabs[0]:
     else:
         st.info("No jobs found in the last 48 hours. Run a scrape to get started.")
 
-    # Auto-refresh Dashboard every 3s while a background task is running
+    # Auto-refresh Dashboard while a background task is running (JS-based, non-blocking)
     if _bg_running:
-        _time.sleep(3)
-        st.rerun()
+        auto_refresh_js(3)
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -711,7 +710,7 @@ with tabs[1]:
             st.markdown("<hr style='margin:2px 0;border:none;border-top:2px solid #ddd'>",
                         unsafe_allow_html=True)
 
-            with st.form("triage_form", clear_on_submit=True):
+            with st.form("triage_form", clear_on_submit=False):
                 # Action bar at TOP
                 tb1, tb2, tb3, tb4, tb5 = st.columns([2, 2, 1.2, 1.2, 2.6])
                 sub_notjob_top = tb1.form_submit_button("🚫 Not a Job", type="primary")
@@ -783,6 +782,9 @@ with tabs[1]:
                         st.session_state["_triage_pending_page"] = min(page_num + 1, total_pages)
                     elif sub_prev:
                         st.session_state["_triage_pending_page"] = max(page_num - 1, 1)
+                    # Clear all checkbox states for the current page before rerun
+                    for j in page_jobs:
+                        st.session_state.pop(f"chk_{j['content_hash']}", None)
                     st.rerun()
 
     # ── Detail view ──────────────────────────────────────────────────────
