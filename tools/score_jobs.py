@@ -58,26 +58,31 @@ Scoring guide:
 
 
 def _score_with_ollama(system_prompt: str, user_content: str) -> dict:
-    """Call Ollama's OpenAI-compatible endpoint. Returns parsed score dict."""
+    """Call Ollama's native /api/chat endpoint. Returns parsed score dict."""
     if _requests is None:
         raise RuntimeError("requests not installed")
-    base = os.getenv("OLLAMA_BASE_URL", "").rstrip("/")
+    base  = os.getenv("OLLAMA_BASE_URL", "").rstrip("/")
     model = os.getenv("OLLAMA_MODEL", "qwen2.5:7b")
-    resp = _requests.post(
-        f"{base}/v1/chat/completions",
+    resp  = _requests.post(
+        f"{base}/api/chat",
         json={
-            "model": model,
+            "model":    model,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user",   "content": user_content},
             ],
-            "max_tokens": 512,
-            "temperature": 0.1,
+            "stream":  False,
+            "options": {"temperature": 0.1, "num_predict": 512},
         },
         timeout=120,
     )
+    if resp.status_code == 404:
+        raise RuntimeError(
+            f"Ollama model '{model}' not found — "
+            f"pull it first: docker exec -it <ollama-container> ollama pull {model}"
+        )
     resp.raise_for_status()
-    raw = resp.json()["choices"][0]["message"]["content"].strip()
+    raw = resp.json()["message"]["content"].strip()
     raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     return json.loads(raw)
 
