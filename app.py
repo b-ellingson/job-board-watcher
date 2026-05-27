@@ -360,9 +360,12 @@ with tabs[0]:
                 _started_dt = datetime.fromisoformat(_bg["started_at"])
                 _elapsed    = int((datetime.now() - _started_dt).total_seconds())
                 _mins, _secs = divmod(_elapsed, 60)
-                _info_col, _stop_col = st.columns([4, 1])
+                _info_col, _refresh_col, _stop_col = st.columns([4, 1, 1])
                 with _info_col:
                     st.info(f"**Running:** {_bg['label']} — {_mins}m {_secs}s elapsed")
+                with _refresh_col:
+                    if st.button("🔄 Refresh", key="refresh_bg"):
+                        st.rerun()
                 with _stop_col:
                     if st.button("⏹ Stop", type="secondary", key="stop_bg"):
                         _runner.stop()
@@ -498,9 +501,8 @@ with tabs[0]:
     else:
         st.info("No jobs found in the last 48 hours. Run a scrape to get started.")
 
-    # Auto-refresh Dashboard while a background task is running (JS-based, non-blocking)
-    if _bg_running:
-        auto_refresh_js(3)
+    # No auto-refresh — user can press F5 to check progress.
+    # JS-based reload was injected into all tabs and caused session hangs.
 
 
 # ════════════════════════════════════════════════════════════════════════
