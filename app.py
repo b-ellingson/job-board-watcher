@@ -733,7 +733,7 @@ with tabs[1]:
                 for j in page_jobs:
                     chk_col, info_col = st.columns([0.5, 9.5])
                     chk_col.checkbox(
-                        "", key=f"chk_{j['content_hash']}",
+                        "Select", key=f"chk_{j['content_hash']}",
                         label_visibility="collapsed",
                     )
                     with info_col:
