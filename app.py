@@ -38,11 +38,18 @@ def _fmt_local(iso_str: str) -> str:
         return iso_str[:16].replace("T", " ")
 
 from tools.diff_jobs import (
-    init_db, migrate_db, get_recent_jobs, get_run_stats, update_job_status,
+    init_db, migrate_db, get_recent_jobs as _get_recent_jobs, get_run_stats, update_job_status,
     get_unsent_jobs, mark_emailed, get_hot_jobs_since, mark_alert_shown,
     get_unscored_jobs, get_company_states, get_real_job_count,
     get_job_counts_by_company,
 )
+
+# Cache the full job list so repeated reruns don't re-query the DB every time.
+# Call get_recent_jobs.clear() after any DB mutation to force a fresh load.
+@st.cache_data(ttl=60, show_spinner=False)
+def get_recent_jobs(limit: int = 10000) -> list[dict]:
+    return _get_recent_jobs(limit)
+
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -667,6 +674,7 @@ with tabs[1]:
             if st.button(f"🧹 Auto-Clean — {len(auto_candidates)} obvious non-jobs", type="secondary"):
                 for j in auto_candidates:
                     update_job_status(j["content_hash"], "not_a_job")
+                get_recent_jobs.clear()
                 st.success(f"Marked {len(auto_candidates)} items as Not a Job.")
                 st.rerun()
         else:
@@ -777,6 +785,7 @@ with tabs[1]:
                         new_st = "saved" if sub_save else "not_a_job"
                         for h in checked:
                             update_job_status(h, new_st)
+                        get_recent_jobs.clear()
                     # Navigate
                     if sub_next:
                         st.session_state["_triage_pending_page"] = min(page_num + 1, total_pages)
@@ -823,10 +832,12 @@ with tabs[1]:
                     )
                     if new_status != j.get("user_status", "new"):
                         update_job_status(j["content_hash"], new_status)
+                        get_recent_jobs.clear()
                         st.rerun()
                     if st.button("🚫 Not a Job", key=f"notjob_{j['content_hash']}",
                                  help="Hide permanently — stays in DB so it won't reappear."):
                         update_job_status(j["content_hash"], "not_a_job")
+                        get_recent_jobs.clear()
                         st.rerun()
 
 
