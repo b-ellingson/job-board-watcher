@@ -241,24 +241,21 @@ def inject_alert(jobs: list[dict], sound: str, visual: str):
         """
 
     js = f"<script>{audio_js}\n{notif_js}</script>"
-    st.components.v1.html(js, height=0)
+    st.html(js)
 
 
 def request_notification_permission():
-    st.components.v1.html("""
+    st.html("""
     <script>
     if (window.Notification && Notification.permission === 'default') {
         Notification.requestPermission();
     }
     </script>
-    """, height=0)
+    """)
 
 
 def auto_refresh_js(seconds: int):
-    st.components.v1.html(
-        f"<script>setTimeout(function(){{window.location.reload();}},{seconds*1000});</script>",
-        height=0,
-    )
+    st.html(f"<script>setTimeout(function(){{window.location.reload();}},{seconds*1000});</script>")
 
 
 def run_streaming(cmd: list[str], log_area, cwd: str) -> int:
@@ -395,7 +392,7 @@ with tabs[0]:
                         "Status":   _h.get("state", ""),
                         "Duration": f"{_d // 60}m {_d % 60}s" if _d is not None else "—",
                     })
-                st.dataframe(_rows, use_container_width=True, hide_index=True)
+                st.dataframe(_rows, width="stretch", hide_index=True)
 
     st.divider()
 

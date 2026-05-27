@@ -8,7 +8,7 @@ python -c "from tools.diff_jobs import init_db, migrate_db; init_db(); migrate_d
 INTERVAL=${TASK_INTERVAL_MINUTES:-5}
 (
   while true; do
-    python run.py 2>&1 | ts '[%Y-%m-%d %H:%M:%S]' || true
+    python run.py 2>&1 || true
     sleep $(( INTERVAL * 60 ))
   done
 ) &
