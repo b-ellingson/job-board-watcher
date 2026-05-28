@@ -9,6 +9,7 @@ import json
 import re
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 try:
     import requests
@@ -37,6 +38,25 @@ def _clean_title(title: str) -> str:
 
 # ── Normalization helpers ───────────────────────────────────────────────────
 
+def _validate_url(url: str) -> str:
+    """Return url if it's a usable HTTP/HTTPS link, else empty string."""
+    if not url:
+        return ""
+    url = url.strip()
+    lower = url.lower()
+    if lower.startswith(("javascript:", "mailto:", "data:", "tel:", "#")):
+        return ""
+    if not lower.startswith(("http://", "https://")):
+        return ""
+    try:
+        parsed = urlparse(url)
+        if not parsed.netloc:
+            return ""
+    except Exception:
+        return ""
+    return url
+
+
 def _hash(company: str, title: str, url: str) -> str:
     key = f"{company.lower().strip()}|{title.lower().strip()}|{(url or '').strip()}"
     return hashlib.sha256(key.encode()).hexdigest()
@@ -44,14 +64,15 @@ def _hash(company: str, title: str, url: str) -> str:
 
 def _norm(company: str, raw: dict, title: str, dept: str, loc: str, url: str, desc: str) -> dict:
     clean = _clean_title((title or "").strip())
+    valid_url = _validate_url((url or "").strip())
     return {
         "company":      company,
         "title":        clean,
         "department":   (dept or "").strip(),
         "location":     (loc or "").strip(),
-        "url":          (url or "").strip(),
+        "url":          valid_url,
         "description":  (desc or "")[:4000],
-        "content_hash": _hash(company, clean, url),
+        "content_hash": _hash(company, clean, valid_url),
     }
 
 
@@ -277,9 +298,11 @@ def _extract_jobs_from_json(body: Any, page_url: str, company: str, out: list):
         )
         if link and not link.startswith("http"):
             from urllib.parse import urljoin
-            # Ensure base URL has trailing slash so relative paths don't drop the ATS subdir
-            base = page_url if page_url.endswith("/") else page_url + "/"
-            link = urljoin(base, link)
+            # Use origin (scheme + host) so paths like "/jobs/123" resolve correctly
+            # regardless of what subdirectory page_url points to.
+            _parsed = urlparse(page_url)
+            origin = f"{_parsed.scheme}://{_parsed.netloc}"
+            link = urljoin(origin + "/", link)
         desc = item.get("description") or item.get("summary") or item.get("shortDescription") or ""
         if isinstance(desc, dict):
             desc = desc.get("text") or desc.get("value") or ""
@@ -312,6 +335,9 @@ def _parse_page_html(page: Any, company: str, url: str) -> list[dict]:
             if href in seen:
                 continue
             seen.add(href)
+            lower_href = href.lower()
+            if lower_href.startswith(("javascript:", "mailto:", "data:", "tel:", "#")):
+                continue
             if not href.startswith("http"):
                 from urllib.parse import urljoin
                 href = urljoin(url, href)

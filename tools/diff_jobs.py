@@ -302,6 +302,54 @@ def get_all_scoreable_jobs(limit: int = 50000) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _is_bad_url(url: str | None) -> bool:
+    """True for empty, non-HTTP, or pseudo-protocol URLs."""
+    if not url:
+        return True
+    url = url.strip()
+    lower = url.lower()
+    if lower.startswith(("javascript:", "mailto:", "data:", "tel:", "#")):
+        return True
+    if not lower.startswith(("http://", "https://")):
+        return True
+    return False
+
+
+def fix_bad_urls(min_score: int = 5) -> int:
+    """
+    Clear bad/non-HTTP URLs from jobs with score >= min_score.
+    Resets url to '' and recomputes content_hash without the URL so the
+    next force-rescrape can backfill the correct link.
+    Returns the count of rows updated.
+    """
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT id, content_hash, company, title, url FROM jobs "
+            "WHERE score >= ? AND (user_status IS NULL OR user_status != 'not_a_job')",
+            (min_score,),
+        ).fetchall()
+        fixed = 0
+        for row in rows:
+            if not _is_bad_url(row["url"]):
+                continue
+            new_hash = make_hash(row["company"], row["title"], "")
+            # Guard against producing a duplicate hash
+            conflict = con.execute(
+                "SELECT id FROM jobs WHERE content_hash = ? AND id != ?",
+                (new_hash, row["id"]),
+            ).fetchone()
+            if conflict:
+                # Just clear the URL; leave hash as-is to avoid unique constraint error
+                con.execute("UPDATE jobs SET url = '' WHERE id = ?", (row["id"],))
+            else:
+                con.execute(
+                    "UPDATE jobs SET url = '', content_hash = ? WHERE id = ?",
+                    (new_hash, row["id"]),
+                )
+            fixed += 1
+    return fixed
+
+
 def _clean_title_migrate(title: str) -> str:
     """Inline title cleaner for DB migration — mirrors scrape_jobs._clean_title."""
     import re
