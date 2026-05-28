@@ -218,7 +218,9 @@ def scrape_playwright(company: dict) -> list[dict]:
                         if h:
                             seen_hashes.add(h)
                         captured_jobs.append(j)
-                except Exception:
+                except BaseException:
+                    # CancelledError (Python 3.8+) and TargetClosedError are BaseException
+                    # subclasses — fires when browser closes while a response is in-flight.
                     pass
 
             page.on("response", handle_response)
