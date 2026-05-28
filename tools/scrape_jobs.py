@@ -248,7 +248,16 @@ def scrape_playwright(company: dict) -> list[dict]:
                 # Fallback: parse visible page text for job titles
                 captured_jobs = _parse_page_html(page, company["name"], url)
 
-            browser.close()
+            # Remove listener before closing so in-flight responses don't
+            # trigger handle_response after the browser context is gone.
+            try:
+                page.remove_listener("response", handle_response)
+            except Exception:
+                pass
+            try:
+                browser.close()
+            except BaseException:
+                pass
             jobs = captured_jobs
     except Exception as e:
         print(f"  [playwright] {company['name']}: {e}")
