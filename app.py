@@ -48,6 +48,8 @@ from tools.diff_jobs import (
     get_unsent_jobs, mark_emailed, get_hot_jobs_since, mark_alert_shown,
     get_unscored_jobs, get_company_states, get_real_job_count,
     get_job_counts_by_company, fix_bad_urls, get_companies_with_bad_urls,
+    get_suspect_title_jobs, get_companies_with_suspect_titles,
+    mark_suspect_titles_not_a_job,
 )
 
 # Cache the full job list so repeated reruns don't re-query the DB every time.
@@ -480,35 +482,94 @@ with tabs[0]:
 
     st.divider()
 
-    # ── Fix Bad URLs & Rescrape ───────────────────────────────────────────
-    st.subheader("Fix Bad URLs")
-    _bad_url_companies = get_companies_with_bad_urls(min_score=5)
-    if _bad_url_companies:
+    # ── Data Quality ──────────────────────────────────────────────────────
+    st.subheader("Data Quality")
+
+    _bad_url_companies     = get_companies_with_bad_urls(min_score=5)
+    _suspect_title_jobs    = get_suspect_title_jobs()
+    _suspect_title_cos     = get_companies_with_suspect_titles()
+    _all_affected_cos      = sorted(set(_bad_url_companies) | set(_suspect_title_cos))
+
+    dq_url_col, dq_title_col = st.columns(2)
+
+    # ── Bad URLs column ───────────────────────────────────────────────────
+    with dq_url_col:
+        st.markdown("**Bad URLs** (score ≥ 5)")
+        if _bad_url_companies:
+            st.caption(
+                f"{len(_bad_url_companies)} company/companies — "
+                + ", ".join(_bad_url_companies)
+            )
+            if st.button(
+                "🔗 Fix URLs & Rescrape",
+                disabled=_bg_running,
+                key="fix_urls_only",
+                help="Clears bad URLs then re-scrapes those companies to recover correct links.",
+            ):
+                fix_bad_urls(min_score=5)
+                get_recent_jobs.clear()
+                _runner.start(
+                    f"Fix URLs & Rescrape ({len(_bad_url_companies)} co.)",
+                    [sys.executable, str(ROOT / "run.py"),
+                     "--force-all", "--no-hours",
+                     "--company", ",".join(_bad_url_companies)],
+                )
+                st.rerun()
+        else:
+            st.caption("No bad URLs found for jobs scored ≥ 5. ✓")
+
+    # ── Suspect titles column ─────────────────────────────────────────────
+    with dq_title_col:
+        st.markdown("**Suspect Titles**")
+        if _suspect_title_jobs:
+            st.caption(
+                f"{len(_suspect_title_jobs)} jobs across "
+                f"{len(_suspect_title_cos)} company/companies — "
+                + ", ".join(_suspect_title_cos)
+            )
+            with st.expander(f"Preview ({min(10, len(_suspect_title_jobs))} examples)"):
+                for _j in _suspect_title_jobs[:10]:
+                    st.caption(f"**{_j['company']}** — `{_j['title']}`")
+            if st.button(
+                "🗑 Remove Suspect Titles & Rescrape",
+                disabled=_bg_running,
+                key="fix_titles_only",
+                help="Marks suspect-title jobs as 'Not a Job' then re-scrapes those companies so real jobs come back with correct titles.",
+            ):
+                mark_suspect_titles_not_a_job()
+                get_recent_jobs.clear()
+                _runner.start(
+                    f"Remove Suspect Titles & Rescrape ({len(_suspect_title_cos)} co.)",
+                    [sys.executable, str(ROOT / "run.py"),
+                     "--force-all", "--no-hours",
+                     "--company", ",".join(_suspect_title_cos)],
+                )
+                st.rerun()
+        else:
+            st.caption("No suspect titles detected. ✓")
+
+    # ── Combined fix ──────────────────────────────────────────────────────
+    if _all_affected_cos:
         st.caption(
-            f"**{len(_bad_url_companies)} company/companies** have jobs (score ≥ 5) "
-            "with missing or invalid URLs:  \n"
-            + ", ".join(_bad_url_companies)
+            f"Or fix both at once — {len(_all_affected_cos)} total company/companies affected."
         )
-        st.caption(
-            "Clicking the button below will clear the bad URLs from the database "
-            "and immediately re-scrape only those companies to recover the correct links."
-        )
-        if st.button("🔗 Fix URLs & Rescrape Affected Companies", type="primary", disabled=_bg_running):
-            fix_bad_urls(min_score=5)
+        if st.button(
+            "🔧 Fix All & Rescrape Affected Companies",
+            type="primary",
+            disabled=_bg_running,
+            key="fix_all_dq",
+            help="Clears bad URLs, removes suspect-title jobs, then re-scrapes all affected companies in one pass.",
+        ):
+            fixed_urls   = fix_bad_urls(min_score=5)
+            fixed_titles = mark_suspect_titles_not_a_job()
             get_recent_jobs.clear()
-            company_filter = ",".join(_bad_url_companies)
-            cmd = [
-                sys.executable, str(ROOT / "run.py"),
-                "--force-all", "--no-hours",
-                "--company", company_filter,
-            ]
             _runner.start(
-                f"Fix URLs & Rescrape ({len(_bad_url_companies)} co.)",
-                cmd,
+                f"Fix All & Rescrape ({len(_all_affected_cos)} co.)",
+                [sys.executable, str(ROOT / "run.py"),
+                 "--force-all", "--no-hours",
+                 "--company", ",".join(_all_affected_cos)],
             )
             st.rerun()
-    else:
-        st.caption("No bad URLs found for jobs scored 5 or higher. ✓")
 
     st.divider()
     st.subheader("Recent Jobs (Last 48h)")

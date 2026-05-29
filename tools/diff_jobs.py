@@ -3,6 +3,7 @@ SQLite layer: schema init, diff detection, company check-interval tracking.
 """
 import hashlib
 import json
+import re
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -300,6 +301,74 @@ def get_all_scoreable_jobs(limit: int = 50000) -> list[dict]:
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Suspect-title detection ─────────────────────────────────────────────────
+
+_PAGINATION_RE = re.compile(
+    r'^\d[\d\s/]+$'               # "6/10 135", "42", "3 / 5"
+    r'|^\d+\s*(of|\/)\s*\d+'      # "6 of 10", "6/10"
+    r'|^page\s+\d+$'              # "Page 2"
+    r'|^\d+\s*results?$',         # "135 results"
+    re.IGNORECASE,
+)
+
+_NAV_FRAGMENTS = frozenset({
+    "read more", "read less", "load more", "see more", "view more",
+    "show more", "show less", "apply now", "apply here", "learn more",
+    "click here", "submit", "back to", "skip to", "next page",
+    "previous page", "filter", "sort by",
+})
+
+
+def _is_suspect_title(title: str) -> bool:
+    """True if the title looks like a scrape artifact rather than a real job posting."""
+    if not title:
+        return True
+    t = title.strip()
+    if len(t) < 5:
+        return True
+    if not re.search(r'[a-zA-Z]', t):          # no letters at all
+        return True
+    if _PAGINATION_RE.match(t):
+        return True
+    t_lower = t.lower()
+    if any(frag in t_lower for frag in _NAV_FRAGMENTS):
+        return True
+    # Short title where fewer than 40% of characters are alphabetic
+    # (catches "6/10 Sr" but not "Sr. Engineer II")
+    if len(t) < 12 and (sum(1 for c in t if c.isalpha()) / len(t)) < 0.4:
+        return True
+    return False
+
+
+def get_suspect_title_jobs() -> list[dict]:
+    """Return active jobs whose titles match scrape-artifact patterns."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT * FROM jobs "
+            "WHERE (user_status IS NULL OR user_status != 'not_a_job') "
+            "ORDER BY first_seen DESC"
+        ).fetchall()
+    return [dict(r) for r in rows if _is_suspect_title(r["title"] or "")]
+
+
+def get_companies_with_suspect_titles() -> list[str]:
+    """Return sorted company names that have at least one suspect-title job."""
+    return sorted({j["company"] for j in get_suspect_title_jobs()})
+
+
+def mark_suspect_titles_not_a_job() -> int:
+    """Mark all suspect-title jobs as not_a_job. Returns the count updated."""
+    jobs = get_suspect_title_jobs()
+    if not jobs:
+        return 0
+    with _connect() as con:
+        con.executemany(
+            "UPDATE jobs SET user_status = 'not_a_job' WHERE content_hash = ?",
+            [(j["content_hash"],) for j in jobs],
+        )
+    return len(jobs)
 
 
 def get_companies_with_bad_urls(min_score: int = 5) -> list[str]:
