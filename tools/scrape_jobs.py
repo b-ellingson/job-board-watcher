@@ -322,11 +322,20 @@ def _extract_jobs_from_json(body: Any, page_url: str, company: str, out: list):
                 link = _lc   # keep longest relative path seen so far
         if link and not link.startswith("http"):
             from urllib.parse import urljoin
-            # Use origin (scheme + host) so paths like "/jobs/123" resolve correctly
-            # regardless of what subdirectory page_url points to.
             _parsed = urlparse(page_url)
-            origin = f"{_parsed.scheme}://{_parsed.netloc}"
-            link = urljoin(origin + "/", link)
+            _origin = f"{_parsed.scheme}://{_parsed.netloc}"
+            _page_path = _parsed.path.rstrip("/")
+            # Workday: individual job paths (/job/Location/Title) are sub-paths of
+            # the board URL (/en-US/BoardName), not root-relative.  Joining with just
+            # the origin drops the board prefix and produces a 404.
+            if (
+                "myworkdayjobs.com" in _parsed.netloc.lower()
+                and link.startswith("/job/")
+                and _page_path and _page_path != "/"
+            ):
+                link = f"{_origin}{_page_path}{link}"
+            else:
+                link = urljoin(_origin + "/", link)
         desc = item.get("description") or item.get("summary") or item.get("shortDescription") or ""
         if isinstance(desc, dict):
             desc = desc.get("text") or desc.get("value") or ""

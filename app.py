@@ -485,10 +485,27 @@ with tabs[0]:
     # ── Data Quality ──────────────────────────────────────────────────────
     st.subheader("Data Quality")
 
-    _bad_url_companies     = get_companies_with_bad_urls(min_score=5)
-    _suspect_title_jobs    = get_suspect_title_jobs()
-    _suspect_title_cos     = get_companies_with_suspect_titles()
-    _all_affected_cos      = sorted(set(_bad_url_companies) | set(_suspect_title_cos))
+    _bad_url_companies  = get_companies_with_bad_urls(min_score=5)
+    _suspect_title_jobs = get_suspect_title_jobs()
+    _suspect_title_cos  = get_companies_with_suspect_titles()
+    _all_affected_cos   = sorted(set(_bad_url_companies) | set(_suspect_title_cos))
+
+    # Split companies by scraping speed.
+    # API companies (greenhouse/lever/ashby/etc.) finish in seconds.
+    # Playwright companies take minutes each — don't include them in the
+    # immediate background rescrape; they'll refresh on their normal schedule.
+    _co_method = {c["name"]: c.get("scraping_method", "playwright") for c in load_companies()}
+
+    def _split_fast_slow(cos: list[str]) -> tuple[list[str], list[str]]:
+        fast = [co for co in cos if _co_method.get(co, "playwright") == "api"]
+        slow = [co for co in cos if _co_method.get(co, "playwright") != "api"]
+        return fast, slow
+
+    def _rescrape_cmd(cos: list[str]) -> list[str] | None:
+        if not cos:
+            return None
+        return [sys.executable, str(ROOT / "run.py"),
+                "--force-all", "--no-hours", "--company", ",".join(cos)]
 
     dq_url_col, dq_title_col = st.columns(2)
 
@@ -496,24 +513,20 @@ with tabs[0]:
     with dq_url_col:
         st.markdown("**Bad URLs** (score ≥ 5)")
         if _bad_url_companies:
-            st.caption(
-                f"{len(_bad_url_companies)} company/companies — "
-                + ", ".join(_bad_url_companies)
-            )
-            if st.button(
-                "🔗 Fix URLs & Rescrape",
-                disabled=_bg_running,
-                key="fix_urls_only",
-                help="Clears bad URLs then re-scrapes those companies to recover correct links.",
-            ):
+            _url_fast, _url_slow = _split_fast_slow(_bad_url_companies)
+            st.caption(f"{len(_bad_url_companies)} company/companies — " + ", ".join(_bad_url_companies))
+            if _url_slow:
+                st.caption(
+                    f"ℹ️ {len(_url_slow)} Playwright co. will be cleaned and fixed on next scheduled run: "
+                    + ", ".join(_url_slow)
+                )
+            if st.button("🔗 Fix URLs & Rescrape", disabled=_bg_running, key="fix_urls_only",
+                         help="Clears bad URLs; immediately re-scrapes API companies, Playwright companies refresh on schedule."):
                 fix_bad_urls(min_score=5)
                 get_recent_jobs.clear()
-                _runner.start(
-                    f"Fix URLs & Rescrape ({len(_bad_url_companies)} co.)",
-                    [sys.executable, str(ROOT / "run.py"),
-                     "--force-all", "--no-hours",
-                     "--company", ",".join(_bad_url_companies)],
-                )
+                _cmd = _rescrape_cmd(_url_fast)
+                if _cmd:
+                    _runner.start(f"Fix URLs & Rescrape ({len(_url_fast)} API co.)", _cmd)
                 st.rerun()
         else:
             st.caption("No bad URLs found for jobs scored ≥ 5. ✓")
@@ -522,53 +535,48 @@ with tabs[0]:
     with dq_title_col:
         st.markdown("**Suspect Titles**")
         if _suspect_title_jobs:
+            _title_fast, _title_slow = _split_fast_slow(_suspect_title_cos)
             st.caption(
-                f"{len(_suspect_title_jobs)} jobs across "
-                f"{len(_suspect_title_cos)} company/companies — "
+                f"{len(_suspect_title_jobs)} jobs across {len(_suspect_title_cos)} company/companies — "
                 + ", ".join(_suspect_title_cos)
             )
             with st.expander(f"Preview ({min(10, len(_suspect_title_jobs))} examples)"):
                 for _j in _suspect_title_jobs[:10]:
                     st.caption(f"**{_j['company']}** — `{_j['title']}`")
-            if st.button(
-                "🗑 Remove Suspect Titles & Rescrape",
-                disabled=_bg_running,
-                key="fix_titles_only",
-                help="Marks suspect-title jobs as 'Not a Job' then re-scrapes those companies so real jobs come back with correct titles.",
-            ):
+            if _title_slow:
+                st.caption(
+                    f"ℹ️ {len(_title_slow)} Playwright co. will be marked; fresh titles on next scheduled run: "
+                    + ", ".join(_title_slow)
+                )
+            if st.button("🗑 Remove Suspect Titles & Rescrape", disabled=_bg_running, key="fix_titles_only",
+                         help="Marks suspect-title jobs as Not a Job; immediately re-scrapes API companies."):
                 mark_suspect_titles_not_a_job()
                 get_recent_jobs.clear()
-                _runner.start(
-                    f"Remove Suspect Titles & Rescrape ({len(_suspect_title_cos)} co.)",
-                    [sys.executable, str(ROOT / "run.py"),
-                     "--force-all", "--no-hours",
-                     "--company", ",".join(_suspect_title_cos)],
-                )
+                _cmd = _rescrape_cmd(_title_fast)
+                if _cmd:
+                    _runner.start(f"Remove Suspect Titles & Rescrape ({len(_title_fast)} API co.)", _cmd)
                 st.rerun()
         else:
             st.caption("No suspect titles detected. ✓")
 
     # ── Combined fix ──────────────────────────────────────────────────────
     if _all_affected_cos:
+        _all_fast, _all_slow = _split_fast_slow(_all_affected_cos)
         st.caption(
-            f"Or fix both at once — {len(_all_affected_cos)} total company/companies affected."
+            f"**Fix All:** {len(_all_fast)} API co. will rescrape now"
+            + (f"; {len(_all_slow)} Playwright co. ({', '.join(_all_slow[:4])}{'…' if len(_all_slow) > 4 else ''}) cleaned and refreshed on schedule." if _all_slow else ".")
         )
         if st.button(
-            "🔧 Fix All & Rescrape Affected Companies",
-            type="primary",
-            disabled=_bg_running,
-            key="fix_all_dq",
-            help="Clears bad URLs, removes suspect-title jobs, then re-scrapes all affected companies in one pass.",
+            "🔧 Fix All & Rescrape API Companies",
+            type="primary", disabled=_bg_running, key="fix_all_dq",
+            help="Clears bad URLs and removes suspect titles. Immediately re-scrapes fast API companies; Playwright companies refresh on their normal schedule.",
         ):
-            fixed_urls   = fix_bad_urls(min_score=5)
-            fixed_titles = mark_suspect_titles_not_a_job()
+            fix_bad_urls(min_score=5)
+            mark_suspect_titles_not_a_job()
             get_recent_jobs.clear()
-            _runner.start(
-                f"Fix All & Rescrape ({len(_all_affected_cos)} co.)",
-                [sys.executable, str(ROOT / "run.py"),
-                 "--force-all", "--no-hours",
-                 "--company", ",".join(_all_affected_cos)],
-            )
+            _cmd = _rescrape_cmd(_all_fast)
+            if _cmd:
+                _runner.start(f"Fix All & Rescrape ({len(_all_fast)} API co.)", _cmd)
             st.rerun()
 
     st.divider()
