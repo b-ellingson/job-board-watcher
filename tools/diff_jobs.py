@@ -53,6 +53,12 @@ def init_db():
             jobs_found         INTEGER DEFAULT 0,
             new_jobs_found     INTEGER DEFAULT 0
         );
+
+        CREATE INDEX IF NOT EXISTS idx_jobs_score       ON jobs (score);
+        CREATE INDEX IF NOT EXISTS idx_jobs_first_seen  ON jobs (first_seen);
+        CREATE INDEX IF NOT EXISTS idx_jobs_emailed     ON jobs (emailed);
+        CREATE INDEX IF NOT EXISTS idx_jobs_user_status ON jobs (user_status);
+        CREATE INDEX IF NOT EXISTS idx_jobs_company     ON jobs (company);
         """)
 
 
@@ -292,13 +298,24 @@ def get_job_counts_by_company() -> dict:
     return {r["company"]: r["cnt"] for r in rows}
 
 
-def get_all_scoreable_jobs(limit: int = 50000) -> list[dict]:
+def reset_company_data(company_name: str) -> int:
+    """Delete all jobs for a company and clear its scrape history so it re-scrapes fresh.
+    Returns the number of jobs deleted."""
+    with _connect() as con:
+        count = con.execute(
+            "SELECT COUNT(*) FROM jobs WHERE company = ?", (company_name,)
+        ).fetchone()[0]
+        con.execute("DELETE FROM jobs WHERE company = ?", (company_name,))
+        con.execute("DELETE FROM company_state WHERE company_name = ?", (company_name,))
+    return count
+
+
+def get_all_scoreable_jobs() -> list[dict]:
     """All real jobs — used for force-rescore. Excludes not_a_job."""
     with _connect() as con:
         rows = con.execute(
             "SELECT * FROM jobs WHERE (user_status IS NULL OR user_status != 'not_a_job') "
-            "ORDER BY first_seen DESC LIMIT ?",
-            (limit,),
+            "ORDER BY first_seen DESC",
         ).fetchall()
     return [dict(r) for r in rows]
 

@@ -49,7 +49,7 @@ from tools.diff_jobs import (
     get_unscored_jobs, get_company_states, get_real_job_count,
     get_job_counts_by_company, fix_bad_urls, get_companies_with_bad_urls,
     get_suspect_title_jobs, get_companies_with_suspect_titles,
-    mark_suspect_titles_not_a_job, rebuild_job,
+    mark_suspect_titles_not_a_job, rebuild_job, reset_company_data,
 )
 
 # Cache the full job list so repeated reruns don't re-query the DB every time.
@@ -1060,7 +1060,7 @@ with tabs[2]:
             f"{job_badge}"
         )
         with st.expander(label, key=f"co_{i}"):
-            col_x, col_y, col_z, col_w = st.columns([2, 1, 1, 1])
+            col_x, col_y, col_z, col_v, col_w = st.columns([2, 1, 1, 1, 1])
             with col_x:
                 st.markdown(f"**URL:** [{c.get('careers_url','')}]({c.get('careers_url','')})")
                 if c.get("ats_slug"):
@@ -1082,10 +1082,32 @@ with tabs[2]:
                     cur = st.session_state.get(f"editing_co_{i}", False)
                     st.session_state[f"editing_co_{i}"] = not cur
                     st.rerun()
+            with col_v:
+                if st.button("🔄 Reset Data", key=f"reset_{i}",
+                             help="Delete all jobs for this company and reset scrape history so it re-scrapes fresh"):
+                    st.session_state[f"confirm_reset_{i}"] = not st.session_state.get(f"confirm_reset_{i}", False)
+                    st.rerun()
             with col_w:
                 if st.button("🗑️ Remove", key=f"rm_{i}"):
                     companies.pop(i)
                     save_companies(companies)
+                    st.rerun()
+
+            if st.session_state.get(f"confirm_reset_{i}", False):
+                st.markdown("---")
+                st.warning(
+                    f"This will delete **{real_jobs} jobs** for **{c['name']}** and clear its scrape "
+                    f"history. The company will be fully re-scraped on the next run."
+                )
+                r1, r2, _ = st.columns([1, 1, 3])
+                if r1.button("⚠️ Confirm Reset", key=f"confirm_reset_btn_{i}", type="primary"):
+                    deleted = reset_company_data(c["name"])
+                    st.session_state.pop(f"confirm_reset_{i}", None)
+                    get_recent_jobs.clear()
+                    st.success(f"Deleted {deleted} jobs for {c['name']}. Will re-scrape on next run.")
+                    st.rerun()
+                if r2.button("Cancel", key=f"cancel_reset_{i}"):
+                    st.session_state.pop(f"confirm_reset_{i}", None)
                     st.rerun()
 
             if st.session_state.get(f"editing_co_{i}", False):

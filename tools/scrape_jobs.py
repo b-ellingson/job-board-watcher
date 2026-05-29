@@ -287,7 +287,15 @@ def _extract_jobs_from_json(body: Any, page_url: str, company: str, out: list):
             item.get("title") or item.get("jobTitle") or item.get("name") or
             item.get("job_title") or item.get("Title") or ""
         )
-        if not title or len(str(title)) < 3:
+        title_str = str(title).strip()
+        if not title_str or len(title_str) < 4:
+            continue
+        if not re.search(r'[a-zA-Z]', title_str):
+            continue
+        if title_str.lower() in {
+            "view position", "view job", "view opening", "view role",
+            "apply now", "apply here", "learn more", "read more",
+        }:
             continue
         dept = (
             item.get("department") or item.get("team") or item.get("function") or
@@ -349,6 +357,8 @@ _NAV_TERMS = {
     "accessibility", "sitemap", "contact us", "about us", "home",
     "login", "sign in", "sign up", "careers", "talent community",
     "vulnerability disclosure", "legal", "copyright",
+    "view position", "view job", "view opening", "view role",
+    "apply now", "apply here", "learn more", "read more",
 }
 
 
