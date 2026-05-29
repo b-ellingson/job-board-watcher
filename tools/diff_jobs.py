@@ -371,6 +371,42 @@ def mark_suspect_titles_not_a_job() -> int:
     return len(jobs)
 
 
+def rebuild_job(content_hash: str) -> str:
+    """Prepare one job for a URL/title rebuild.
+    - Bad URL  → cleared, content hash reset so next rescrape backfills correct link.
+    - Suspect title → marked not_a_job so rescrape re-creates it with correct title.
+    Returns the company name for use in a targeted rescrape command.
+    """
+    with _connect() as con:
+        row = con.execute(
+            "SELECT * FROM jobs WHERE content_hash = ?", (content_hash,)
+        ).fetchone()
+        if not row:
+            return ""
+        row = dict(row)
+
+        if _is_bad_url(row.get("url")):
+            new_hash = make_hash(row["company"], row["title"], "")
+            conflict = con.execute(
+                "SELECT id FROM jobs WHERE content_hash = ? AND id != ?",
+                (new_hash, row["id"]),
+            ).fetchone()
+            if conflict:
+                con.execute("UPDATE jobs SET url = '' WHERE id = ?", (row["id"],))
+            else:
+                con.execute(
+                    "UPDATE jobs SET url = '', content_hash = ? WHERE id = ?",
+                    (new_hash, row["id"]),
+                )
+
+        if _is_suspect_title(row.get("title", "")):
+            con.execute(
+                "UPDATE jobs SET user_status = 'not_a_job' WHERE id = ?", (row["id"],)
+            )
+
+        return row["company"]
+
+
 def get_companies_with_bad_urls(min_score: int = 5) -> list[str]:
     """Return sorted company names that have at least one job with a bad URL and score >= min_score."""
     with _connect() as con:

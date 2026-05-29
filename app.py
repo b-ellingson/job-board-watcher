@@ -49,7 +49,7 @@ from tools.diff_jobs import (
     get_unscored_jobs, get_company_states, get_real_job_count,
     get_job_counts_by_company, fix_bad_urls, get_companies_with_bad_urls,
     get_suspect_title_jobs, get_companies_with_suspect_titles,
-    mark_suspect_titles_not_a_job,
+    mark_suspect_titles_not_a_job, rebuild_job,
 )
 
 # Cache the full job list so repeated reruns don't re-query the DB every time.
@@ -592,16 +592,36 @@ with tabs[0]:
     if recent:
         for j in recent:
             sc = score_badge(j.get("score"))
+            _bad_url   = not j.get("url") or not j["url"].lower().startswith("http")
+            _bad_title = not j.get("url") and not j.get("title", "").strip()  # simple check; full check is in diff_jobs
             with st.expander(f"{sc}  **{j['title']}** — {j['company']}  |  {j.get('location','')}"):
                 if j.get("score_reason"):
                     st.caption(j["score_reason"])
-                if j.get("url"):
-                    st.markdown(f"[View Job →]({j['url']})")
-                else:
-                    fb = _dash_company_lookup.get(j.get("company", ""), "")
-                    if fb:
-                        st.markdown(f"[View Company Jobs ↗]({fb})")
-                st.caption(_fmt_local(j.get("first_seen", "")))
+                _link_col, _btn_col = st.columns([3, 1])
+                with _link_col:
+                    if j.get("url"):
+                        st.markdown(f"[View Job →]({j['url']})")
+                    else:
+                        fb = _dash_company_lookup.get(j.get("company", ""), "")
+                        if fb:
+                            st.markdown(f"[View Company Jobs ↗]({fb})")
+                    st.caption(_fmt_local(j.get("first_seen", "")))
+                with _btn_col:
+                    if st.button(
+                        "🔄 Rebuild",
+                        key=f"rebuild_dash_{j['content_hash']}",
+                        disabled=_bg_running,
+                        help="Clears bad URL/title for this job then re-scrapes the company.",
+                    ):
+                        _co = rebuild_job(j["content_hash"])
+                        get_recent_jobs.clear()
+                        if _co:
+                            _runner.start(
+                                f"Rebuild {_co}",
+                                [sys.executable, str(ROOT / "run.py"),
+                                 "--force-all", "--no-hours", "--company", _co],
+                            )
+                        st.rerun()
     else:
         st.info("No jobs found in the last 48 hours. Run a scrape to get started.")
 
@@ -944,6 +964,21 @@ with tabs[1]:
                                  help="Hide permanently — stays in DB so it won't reappear."):
                         update_job_status(j["content_hash"], "not_a_job")
                         get_recent_jobs.clear()
+                        st.rerun()
+                    if st.button(
+                        "🔄 Rebuild URL/Title",
+                        key=f"rebuild_{j['content_hash']}",
+                        disabled=_bg_running,
+                        help="Clears bad URL/title for this job then re-scrapes the company to recover correct data.",
+                    ):
+                        _co = rebuild_job(j["content_hash"])
+                        get_recent_jobs.clear()
+                        if _co:
+                            _runner.start(
+                                f"Rebuild {_co}",
+                                [sys.executable, str(ROOT / "run.py"),
+                                 "--force-all", "--no-hours", "--company", _co],
+                            )
                         st.rerun()
 
 
