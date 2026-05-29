@@ -142,8 +142,8 @@ def main():
     active = [c for c in all_companies if c.get("active", True)]
 
     if args.company:
-        needle = args.company.lower()
-        active = [c for c in active if needle in c["name"].lower()]
+        needles = [n.strip().lower() for n in args.company.split(",") if n.strip()]
+        active = [c for c in active if any(n in c["name"].lower() for n in needles)]
         if not active:
             print(f"No active company matching '{args.company}'. Check companies.json.")
             return

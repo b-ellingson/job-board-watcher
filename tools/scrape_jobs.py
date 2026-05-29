@@ -301,12 +301,25 @@ def _extract_jobs_from_json(body: Any, page_url: str, company: str, out: list):
         )
         if isinstance(loc, dict):
             loc = loc.get("city") or loc.get("name") or loc.get("label") or ""
-        link = (
-            item.get("url") or item.get("link") or item.get("externalPath") or
-            item.get("jobUrl") or item.get("applyUrl") or item.get("jobHref") or
-            item.get("detailUrl") or item.get("postingPath") or item.get("path") or
-            item.get("href") or ""
-        )
+        # Prefer ATS-specific path fields (externalPath/postingPath contain the full
+        # relative path including language and board name, e.g. Workday's
+        # /en-US/Everise/job/...).  Generic "url" fields may be shorter stubs.
+        # Within relative paths, longer = more complete, so pick the longest.
+        _link_candidates = [
+            item.get("jobUrl"), item.get("applyUrl"), item.get("jobHref"),
+            item.get("externalPath"), item.get("detailUrl"), item.get("postingPath"),
+            item.get("url"), item.get("link"), item.get("path"), item.get("href"),
+        ]
+        link = ""
+        for _lc in _link_candidates:
+            if not _lc or not isinstance(_lc, str):
+                continue
+            _lc = _lc.strip()
+            if _lc.lower().startswith("http"):
+                link = _lc   # absolute URL — use it and stop looking
+                break
+            if len(_lc) > len(link):
+                link = _lc   # keep longest relative path seen so far
         if link and not link.startswith("http"):
             from urllib.parse import urljoin
             # Use origin (scheme + host) so paths like "/jobs/123" resolve correctly
@@ -340,6 +353,9 @@ def _parse_page_html(page: Any, company: str, url: str) -> list[dict]:
             text = (link.inner_text() or "").strip()
             href = link.get_attribute("href") or ""
             if not text or len(text) < 8 or len(text) > 150:
+                continue
+            # Skip pagination / counter text: "6/10 135", "Page 2", "1 of 5", "135 results"
+            if re.match(r'^\d[\d\s/]+$', text) or re.match(r'^\d+\s*(of|\/)\s*\d+', text, re.I):
                 continue
             if text.lower() in _NAV_TERMS or any(t in text.lower() for t in _NAV_TERMS):
                 continue

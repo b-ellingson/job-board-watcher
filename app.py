@@ -47,7 +47,7 @@ from tools.diff_jobs import (
     init_db, migrate_db, get_recent_jobs as _get_recent_jobs, get_run_stats, update_job_status,
     get_unsent_jobs, mark_emailed, get_hot_jobs_since, mark_alert_shown,
     get_unscored_jobs, get_company_states, get_real_job_count,
-    get_job_counts_by_company, fix_bad_urls,
+    get_job_counts_by_company, fix_bad_urls, get_companies_with_bad_urls,
 )
 
 # Cache the full job list so repeated reruns don't re-query the DB every time.
@@ -480,22 +480,35 @@ with tabs[0]:
 
     st.divider()
 
-    # ── Fix Bad URLs ──────────────────────────────────────────────────────
+    # ── Fix Bad URLs & Rescrape ───────────────────────────────────────────
     st.subheader("Fix Bad URLs")
-    st.caption(
-        "Clears invalid job URLs (javascript:, mailto:, #, etc.) for jobs scored 5 or higher. "
-        "After fixing, run **Force All** scrape to backfill correct links."
-    )
-    if st.button("🔗 Fix Bad URLs (score ≥ 5)", disabled=_bg_running):
-        fixed_count = fix_bad_urls(min_score=5)
-        get_recent_jobs.clear()
-        if fixed_count:
-            st.success(
-                f"Fixed {fixed_count} job(s) with bad URLs. "
-                "Run a Force All scrape to recover the correct links."
+    _bad_url_companies = get_companies_with_bad_urls(min_score=5)
+    if _bad_url_companies:
+        st.caption(
+            f"**{len(_bad_url_companies)} company/companies** have jobs (score ≥ 5) "
+            "with missing or invalid URLs:  \n"
+            + ", ".join(_bad_url_companies)
+        )
+        st.caption(
+            "Clicking the button below will clear the bad URLs from the database "
+            "and immediately re-scrape only those companies to recover the correct links."
+        )
+        if st.button("🔗 Fix URLs & Rescrape Affected Companies", type="primary", disabled=_bg_running):
+            fix_bad_urls(min_score=5)
+            get_recent_jobs.clear()
+            company_filter = ",".join(_bad_url_companies)
+            cmd = [
+                sys.executable, str(ROOT / "run.py"),
+                "--force-all", "--no-hours",
+                "--company", company_filter,
+            ]
+            _runner.start(
+                f"Fix URLs & Rescrape ({len(_bad_url_companies)} co.)",
+                cmd,
             )
-        else:
-            st.info("No bad URLs found for jobs scored 5 or higher.")
+            st.rerun()
+    else:
+        st.caption("No bad URLs found for jobs scored 5 or higher. ✓")
 
     st.divider()
     st.subheader("Recent Jobs (Last 48h)")

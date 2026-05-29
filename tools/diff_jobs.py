@@ -302,6 +302,25 @@ def get_all_scoreable_jobs(limit: int = 50000) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_companies_with_bad_urls(min_score: int = 5) -> list[str]:
+    """Return sorted company names that have at least one job with a bad URL and score >= min_score."""
+    with _connect() as con:
+        rows = con.execute(
+            """SELECT DISTINCT company FROM jobs
+               WHERE score >= ?
+                 AND (user_status IS NULL OR user_status != 'not_a_job')
+                 AND (
+                   url IS NULL OR url = ''
+                   OR url LIKE 'javascript:%' OR url LIKE 'mailto:%'
+                   OR url LIKE 'data:%'   OR url LIKE 'tel:%'
+                   OR (url NOT LIKE 'http://%' AND url NOT LIKE 'https://%')
+                 )
+               ORDER BY company""",
+            (min_score,),
+        ).fetchall()
+    return [r["company"] for r in rows]
+
+
 def _is_bad_url(url: str | None) -> bool:
     """True for empty, non-HTTP, or pseudo-protocol URLs."""
     if not url:
