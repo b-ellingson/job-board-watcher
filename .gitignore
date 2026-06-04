@@ -20,8 +20,9 @@ __pycache__/
 .venv/
 venv/
 
-# Claude Code assistant memory (local only)
-.claude/
+# Claude Code — ignore local settings and memory, but track project instructions
+.claude/*
+!.claude/CLAUDE.md
 
 # IntelliJ
 .idea/
