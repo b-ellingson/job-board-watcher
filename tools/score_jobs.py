@@ -106,17 +106,21 @@ def _score_with_anthropic(client, system_prompt: str, user_content: str) -> dict
     return json.loads(raw)
 
 
-def score_jobs(jobs: list[dict], dry_run: bool = False) -> list[dict]:
+def score_jobs(jobs: list[dict], dry_run: bool = False, force: bool = False) -> list[dict]:
     """
     Score a list of job dicts. Returns the same dicts with score/score_reason/matched_keywords added.
-    Already-scored jobs (score is not None) are passed through unchanged.
+    Already-scored jobs (score is not None) are passed through unchanged unless force=True.
     Uses Ollama if OLLAMA_BASE_URL is set, otherwise falls back to Anthropic.
     """
     if not jobs:
         return []
 
-    to_score = [j for j in jobs if j.get("score") is None]
-    pre_scored = [j for j in jobs if j.get("score") is not None]
+    if force:
+        to_score = list(jobs)
+        pre_scored = []
+    else:
+        to_score = [j for j in jobs if j.get("score") is None]
+        pre_scored = [j for j in jobs if j.get("score") is not None]
 
     if not to_score:
         return jobs
@@ -170,7 +174,7 @@ def score_jobs(jobs: list[dict], dry_run: bool = False) -> list[dict]:
             job["matched_keywords"] = result.get("matched_keywords", [])
         except Exception as e:
             print(f"    [score] Error on '{job.get('title')}': {e}")
-            job["score"] = 0
+            job["score"] = None  # leave unscored so it can be retried
             job["score_reason"] = f"Scoring error: {e}"
             job["matched_keywords"] = []
 

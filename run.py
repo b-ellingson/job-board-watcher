@@ -37,7 +37,7 @@ sys.path.insert(0, str(ROOT))
 from tools.diff_jobs import (
     init_db, migrate_db, is_due, mark_checked, diff_jobs, save_scores,
     get_unsent_jobs, mark_emailed, log_run, get_unscored_jobs,
-    get_all_scoreable_jobs,
+    get_all_scoreable_jobs, get_zero_scored_jobs,
 )
 from tools.scrape_jobs import scrape_company
 from tools.score_jobs import score_jobs
@@ -70,12 +70,13 @@ def main():
     parser.add_argument("--skip-score",  action="store_true", help="Skip Claude scoring")
     parser.add_argument("--no-hours",    action="store_true", help="Bypass active-hours check (for testing)")
     parser.add_argument("--score-only",  action="store_true", help="Score unscored jobs, no scraping")
-    parser.add_argument("--rescore-all", action="store_true", help="Re-score all real jobs (overwrites existing scores)")
+    parser.add_argument("--rescore-all",   action="store_true", help="Re-score all real jobs (overwrites existing scores)")
+    parser.add_argument("--rescore-zeros", action="store_true", help="Re-score jobs with score=0 (prior error runs)")
     args = parser.parse_args()
 
     # Active hours guard (skip for manual flags)
     is_manual = (args.dry_run or args.company or args.force_all or args.send_digest
-                 or args.no_hours or args.score_only or args.rescore_all)
+                 or args.no_hours or args.score_only or args.rescore_all or args.rescore_zeros)
     if not is_manual and not active_hours_check():
         return
 
@@ -83,10 +84,13 @@ def main():
     migrate_db()
 
     # ── Score-only modes ──────────────────────────────────────────────────
-    if args.score_only or args.rescore_all:
+    if args.score_only or args.rescore_all or args.rescore_zeros:
         if args.rescore_all:
             jobs_to_score = get_all_scoreable_jobs()
             print(f"Re-scoring {len(jobs_to_score)} real jobs (overwrites existing scores) ...")
+        elif args.rescore_zeros:
+            jobs_to_score = get_zero_scored_jobs()
+            print(f"Re-scoring {len(jobs_to_score)} jobs with score=0 ...")
         else:
             jobs_to_score = get_unscored_jobs()
             print(f"Scoring {len(jobs_to_score)} unscored jobs ...")
@@ -95,7 +99,7 @@ def main():
             print("Nothing to score.")
             return
 
-        scored = score_jobs(jobs_to_score)
+        scored = score_jobs(jobs_to_score, force=args.rescore_all or args.rescore_zeros)
         save_scores(scored)
         print(f"Done — scored {len(scored)} jobs.")
         return

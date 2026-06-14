@@ -191,6 +191,17 @@ def get_unscored_jobs() -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def get_zero_scored_jobs() -> list[dict]:
+    """Jobs with score=0 — likely scoring errors from prior runs."""
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT * FROM jobs WHERE score = 0 "
+            "AND (user_status IS NULL OR user_status != 'not_a_job') "
+            "ORDER BY first_seen DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_unsent_jobs(threshold: int = 1) -> list[dict]:
     """Jobs that scored at/above threshold and haven't been emailed yet."""
     with _connect() as con:

@@ -46,7 +46,7 @@ def _fmt_local(iso_str: str) -> str:
 from tools.diff_jobs import (
     init_db, migrate_db, get_recent_jobs as _get_recent_jobs, get_run_stats, update_job_status,
     get_unsent_jobs, mark_emailed, get_hot_jobs_since, mark_alert_shown,
-    get_unscored_jobs, get_company_states, get_real_job_count,
+    get_unscored_jobs, get_zero_scored_jobs, get_company_states, get_real_job_count,
     get_job_counts_by_company, fix_bad_urls, get_companies_with_bad_urls,
     get_suspect_title_jobs, get_companies_with_suspect_titles,
     mark_suspect_titles_not_a_job, rebuild_job, reset_company_data,
@@ -436,10 +436,11 @@ with tabs[0]:
 
     # ── Scoring ───────────────────────────────────────────────────────────
     st.subheader("Scoring")
-    unscored = get_unscored_jobs()
+    unscored  = get_unscored_jobs()
+    zeros     = get_zero_scored_jobs()
     all_real  = get_real_job_count()
 
-    sc_col1, sc_col2 = st.columns(2)
+    sc_col1, sc_col2, sc_col3 = st.columns(3)
 
     _using_ollama = bool(env.get("OLLAMA_BASE_URL", "").strip())
 
@@ -479,6 +480,17 @@ with tabs[0]:
             cmd = [sys.executable, str(ROOT / "run.py"), "--rescore-all", "--no-hours"]
             _runner.start(f"Rescore All ({all_real:,} jobs)", cmd)
             st.rerun()
+
+    with sc_col3:
+        st.caption(f"**{len(zeros)}** jobs with score = 0 (prior errors)")
+        if zeros:
+            st.info("Re-score jobs that previously failed scoring (score was saved as 0).")
+            if st.button(f"♻️ Rescore {len(zeros)} Zero-Scored Jobs", disabled=_bg_running):
+                cmd = [sys.executable, str(ROOT / "run.py"), "--rescore-zeros", "--no-hours"]
+                _runner.start(f"Rescore Zeros ({len(zeros)} jobs)", cmd)
+                st.rerun()
+        else:
+            st.success("No zero-scored jobs.")
 
     st.divider()
 
