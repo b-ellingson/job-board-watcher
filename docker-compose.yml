@@ -6,14 +6,13 @@ services:
     ports:
       - "11434:11434"
     restart: unless-stopped
-    # Uncomment below for Nvidia GPU passthrough (requires nvidia-container-toolkit on Unraid):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   app:
     build: .
