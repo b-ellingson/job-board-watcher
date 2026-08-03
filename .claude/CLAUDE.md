@@ -42,6 +42,7 @@ python run.py --force-all --no-hours         # Force-scrape every active company
 python run.py --send-digest                  # Send digest email immediately
 python run.py --score-only                   # Score unscored jobs, no scraping
 python run.py --rescore-all                  # Re-score all real jobs (overwrites existing scores)
+python run.py --rescore-zeros                # Re-score jobs with score=0 (prior error runs)
 python tools/seed_companies.py --overwrite   # Re-seed companies.json from Excel
 ```
 
@@ -77,6 +78,8 @@ On API failure or empty result, falls back to Playwright automatically. Platform
 
 Returns: `{score: 1–10, score_reason: str, matched_keywords: list}`.
 
+**Error behavior:** if the LLM call fails, `score` is left as `NULL` (not 0) so the job stays unscored and retryable. `score=0` means the model genuinely returned 0. Use `--rescore-zeros` to retry that backlog. `score_jobs()` accepts `force=True` to bypass the "skip already-scored" filter — used by `--rescore-all` and `--rescore-zeros`.
+
 ## Database Schema
 
 `jobs`: `id, company, title, department, location, url, description, content_hash (unique SHA256), score, score_reason, matched_keywords, first_seen, last_seen, emailed, alert_shown, user_status (new/saved/not_interested/not_a_job)`
@@ -95,4 +98,4 @@ Returns: `{score: 1–10, score_reason: str, matched_keywords: list}`.
 
 **`.tmp/` is fully disposable.** Durable user config: `companies.json`, `profile/`, `.env`.
 
-**Docker:** `Dockerfile` + `docker-compose.yml` handle Linux/Unraid deployment. The scraper loop runs via `entrypoint.sh`; the `build: .` context is set in `docker-compose.yml`.
+**Docker:** `Dockerfile` + `docker-compose.yml` handle Linux/Unraid deployment. The scraper loop runs via `entrypoint.sh`; the `build: .` context is set in `docker-compose.yml`. GPU passthrough for Ollama is enabled via the `deploy.resources` block in `docker-compose.yml` — requires the `nvidia-driver` Unraid plugin (ich777) which installs `nvidia-container-toolkit`. Rebuild after code changes: `git pull && docker compose up -d --build`.
